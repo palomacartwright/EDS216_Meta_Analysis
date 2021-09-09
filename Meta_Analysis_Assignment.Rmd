@@ -1,0 +1,21 @@
+---
+title: "Meta Analysis Assignment"
+author: "Paloma Cartwright"
+date: "09/09/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(here)
+library(janitor)
+library(metafor)
+```
+
+## Read in csv 
+
+```{r}
+Rich_Data <- read.csv(here::here("data", "RichDataPreprepared.csv"))
+```
+

@@ -1,0 +1,137 @@
+---
+title: "Meta Analysis Practice"
+author: "Paloma Cartwright"
+date: "09/09/2021"
+output: 
+  html_document:
+    toc: true 
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(here)
+library(metafor)
+library(janitor)
+library(tidyverse)
+```
+Reading in the data set from Gardner et. al. cleaned to contain only primates. 
+
+```{r}
+DatRich <- read_csv(here::here("Gardner_et_al_data_onlyprimates.csv")) 
+```
+## Calculating the Unstandardized Values
+
+This is problematic because there is no way of knowing if the values and variables are the same type and unit
+
+#### Calculate the Unstandardized Mean Difference 
+Subtract the MeanvalueatLowFauna from the MeanvalueatHighFauna to get the mean difference
+
+```{r}
+DatRich <- DatRich %>% 
+  mutate(u_mean_diff = MeanvalueatHighFauna - MeanvalueatLowFauna)
+
+```
+
+#### Calculate the pooled standard deviation 
+
+```{r}
+DatRich <- DatRich %>% 
+  mutate(s_pooled = 
+           sqrt((((HighFaunaN -1) * SDatHighFauna ^ 2) + ((LowFaunaN - 1) * SDatLowFauna ^ 2))
+                /((HighFaunaN -1) + (LowFaunaN - 1))))
+
+```
+
+#### Calculate the mean difference standard error between high and low fauna
+
+```{r}
+DatRich <- DatRich %>% 
+  mutate(umd_se = s_pooled * sqrt((1 / HighFaunaN) + (1 / LowFaunaN)))
+```
+
+
+## Calculating the Standardized Values 
+
+#### Calculating the standardized mean difference
+
+```{r}
+DatRich <- DatRich %>% 
+  mutate(smd = u_mean_diff / s_pooled)
+```
+
+#### Calculating the correction factor 
+
+```{r}
+DatRich <- DatRich %>% 
+  mutate(j = (1 - (3 / (4 * (HighFaunaN + LowFaunaN - 2) - 1))))
+```
+
+#### Calculating the Hedge's g value 
+
+```{r}
+DatRich <- DatRich %>% 
+  mutate(g = smd * j )
+```
+
+#### Calculating the standard error of Hedge's g 
+
+When the sample sizes are small Cohen's d values can be biased so you correct for that by calculating the Hedge's g value
+
+```{r}
+DatRich <- DatRich %>% 
+  mutate(hedgesg_se = sqrt(((HighFaunaN + LowFaunaN) / (HighFaunaN * LowFaunaN))
+                           + ((g ^ 2)/(2 * (HighFaunaN + LowFaunaN)))))
+```
+
+## Fixed Effects Model 
+
+The pooled effect is a weighted average. The assumption is that there is one true effect and any variation from that is due to sampling error. This is not necessarily a good assumption, so beware. But, if it is only sampling area that cause deviation from the true effects, then you can weight each study by their inverse variance. 
+
+#### Calculate the inverse variance weighting 
+
+```{r}
+DatRich <- DatRich %>% 
+  mutate( w = 1 / (hedgesg_se ^ 2))
+
+```
+
+#### Calculate the Theta 
+
+```{r}
+pooled_fixed_effect <- DatRich %>% 
+  summarize(pooled_fixed_effect = (sum(g * w ))/ sum(w)) %>% 
+  pull() # this is a dplyr function that just pulls the value out instead of fucking up the dataframe. It can also pull a whole vector 
+```
+
+## Using metafor 
+
+Metafor can do everything that we just did by hand. So now that we know what we were doing, metafor is available for us 
+
+`escalc()` - effect size calculation 
+
+### Creating the Forest Plot 
+
+```{r, fig.height= 7, fig.width=5}
+
+DatRich <- escalc(n1i = LowFaunaN, n2i = HighFaunaN, m1i = MeanvalueatLowFauna, 
+                  m2i = MeanvalueatHighFauna, sd1i = (SDatLowFauna), sd2i = (SDatHighFauna), 
+                  data = DatRich, measure = "SMD", append = TRUE)
+# SMD is Hedge's g in metafor 
+
+Rich_Overall <- rma(yi, vi, method = "FE", data = DatRich)
+forest(Rich_Overall) 
+
+```
+
+### Test for Publication Bias 
+
+```{r, fig.height=5, fig.width=3}
+par(mfrow = c(2, 1))
+funnel(Rich_Overall, main="Standard Error")
+funnel(Rich_Overall, yaxis="seinv", main="Inverse Standard Error")
+
+```
+
+
+
